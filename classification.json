@@ -1,0 +1,30 @@
+{
+    "pipeline": [
+        {
+            "type": "filters.assign",
+            "assignment": "Classification[:]=0"  // Reset classifications
+        },
+        {
+            "type": "filters.elm",             // Remove low noise (optional)
+            "cell": 1.0                         // Larger cells reduce memory
+        },
+        {
+            "type": "filters.outlier",          // Remove outliers
+            "method": "statistical",
+            "mean_k": 8,                       // Fewer neighbors = less memory
+            "multiplier": 2.0
+        },
+        {
+            "type": "filters.smrf",            // Ground classification
+            "ignore": "Classification[7:7]",   // Ignore existing ground (if any)
+            "slope": 0.1,
+            "window": 8,                       
+            "threshold": 0.45,
+            "scalar": 1.2
+        },
+        {
+            "type":"filters.expression",
+            "expression":"Classification == 2"
+          }
+    ]
+}
