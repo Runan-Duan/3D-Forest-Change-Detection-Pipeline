@@ -1,9 +1,0 @@
-{
-    "pipeline":[
-    "data/20240607_UAV-Photo_Sandhausen_2cm.laz",
-    {
-        "type": "filters.voxelcentroidnearestneighbor",
-        "cell": 5.0
-    },
-    "data/20240607_UAV-Photo_Sandhausen_5cm.laz"
-]}
