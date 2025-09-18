@@ -1,17 +1,21 @@
 {
     "pipeline": [
         {
+            "type": "readers.las",
+            "filename": "${INPUT}"
+        },
+        {
             "type": "filters.assign",
             "assignment": "Classification[:]=0"  // Reset classifications
         },
         {
-            "type": "filters.elm",             // Remove low noise (optional)
-            "cell": 1.0                         // Larger cells reduce memory
+            "type": "filters.elm",             // The Extended Local Minimum (ELM) filter marks low points as noise
+            "threshold": 2.0                       // Larger cells reduce memory
         },
         {
             "type": "filters.outlier",          // Remove outliers
             "method": "statistical",
-            "mean_k": 8,                       // Fewer neighbors = less memory
+            "mean_k": 8,                       
             "multiplier": 2.0
         },
         {
@@ -23,8 +27,13 @@
             "scalar": 1.2
         },
         {
-            "type":"filters.expression",
-            "expression":"Classification == 2"
-          }
+            "type": "filters.hag_nn"
+        },
+        {
+            "type": "writers.las",
+            "filename": "${OUTPUT}",
+            "extra_dims": "HeightAboveGround=float32"
+        }
+
     ]
 }
