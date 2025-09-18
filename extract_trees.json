@@ -1,0 +1,22 @@
+{
+    "pipeline":[
+        {
+            "type": "readers.las",
+            "filename": "${INPUT}"
+        },
+        {
+            "type": "filters.expression",
+            "expression": "Classification != 2"
+        },
+        {
+            "type": "filters.normal",
+            "knn": 16,
+            "refine": true
+        },
+        {
+            "type": "writers.las",
+            "filename": "${OUTPUT}",
+            "extra_dims": "NormalX=float, NormalY=float, NormalZ=float, Curvature=float"
+        }
+    ]
+}
