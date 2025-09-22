@@ -1,0 +1,182 @@
+---
+title: "Individual_Tree_detection"
+output: html_document
+date: "2025-03-18"
+---
+
+```{r setup, include=FALSE}
+# Install required packages
+require(lidR)
+library(ggplot2)
+library(rgl)
+library(sf)
+library(raster)
+library(terra)
+library(ggplot2)
+library(tmap)
+```
+
+```{r}
+threads = 8
+get_lidr_threads()
+set_lidr_threads(threads)
+get_lidr_threads()
+```
+
+## Import drone image
+```{r}
+base_2024 <- stack("../data/20240607_UAV-Photo_Sandhausen_ortho_2cm_clipped.tif")
+base_2025 <- stack("../data/20250613_UAV-Photo_Sandhausen_ortho_2cm_clipped.tif")
+#base_df <- as.data.frame(base, xy=TRUE)
+plotRGB(base_2024,
+        r = 1, g = 2, b = 3)
+plotRGB(base_2025,
+        r = 1, g = 2, b = 3)
+```
+
+## Import and preprocessing Point cloud
+
+```{r}
+trees_2024 <- readLAS("../data/20240607_trees_refined.laz")
+trees_2025 <- readLAS("../data/20250613_trees_refined.laz")
+```
+
+
+```{r}
+ground_2024 <- readLAS("../data/20240607_ground.laz")
+ground_2025 <- readLAS("../data/20250613_ground.laz")
+```
+
+## Ground rasterization
+
+```{r}
+dtm_2024 <- rasterize_terrain(ground_2024, 1, knnidw())
+dtm_2025 <- rasterize_terrain(ground_2025, 1, knnidw())
+```
+
+```{r}
+plot(dtm_2024)
+plot(dtm_2025)
+```
+
+## Normalize height
+
+```{r}
+norm_trees_2024 <- normalize_height(trees_2024, tin(), dtm = dtm_2024)
+norm_trees_2025 <- normalize_height(trees_2025, tin(), dtm = dtm_2025)
+```
+
+## Remove noise
+
+```{r}
+noise_2024 <- classify_noise(norm_trees_2024, sor(k=8,m=2))
+noise_2025 <- classify_noise(norm_trees_2025, sor(k=8,m=2))
+
+# Remove outliers using filter_poi()
+tree_denoise_2024 <- filter_poi(noise_2024, Classification != LASNOISE)
+tree_denoise_2025 <- filter_poi(noise_2025, Classification != LASNOISE)
+#plot(tree_denoise, color = "Z", bg = "white", axis = TRUE, legend = TRUE)
+```
+
+
+### Rasterize Canopy
+```{r}
+chm_2024 <- rasterize_canopy(tree_denoise_2024, res = 0.1, algorithm = p2r(subcircle = 1), pkg = "terra")
+chm_2025 <- rasterize_canopy(tree_denoise_2025, res = 0.1, algorithm = p2r(subcircle = 1), pkg = "terra")
+
+col <- height.colors(25)
+plot(chm_2024, col = col)
+plot(chm_2025, col = col)
+```
+
+```{r}
+fill.na <- function(x, i=5) { if (is.na(x)[i]) { return(mean(x, na.rm = TRUE)) } else { return(x[i]) }}
+w <- matrix(1, 3, 3)
+filled <- terra::focal(chm, w, fun = fill.na)
+smoothed <- terra::focal(chm, w, fun = mean, na.rm = TRUE)
+chms <- c(chm, filled, smoothed)
+names(chms) <- c("Base", "Filled", "Smoothed")
+plot(chms, col = col)
+```
+
+##  Individual Tree Detection (ITD)
+
+```{r}
+ttops <- locate_trees(tree_denoise, lmf(ws = 5))
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops), add = TRUE, pch = 1)
+plot(smoothed, col = height.colors(50))
+plot(sf::st_geometry(ttops), add = TRUE, pch = 1)
+
+```
+
+```{r}
+plotRGB(base, r = 1, g = 2, b = 3)
+plot(sf::st_geometry(ttops), add = TRUE, pch = 1)
+```
+
+
+### CHM based Segmentation
+```{r}
+algo <- dalponte2016(smoothed, ttops)
+tree_segs <- segment_trees(las, algo) # segment point cloud
+writeLAS(tree_segs, "Segmented_trees_new.laz")
+```
+
+
+```{r}
+plot(tree_segs, bg = "white", size = 4, color = "treeID") # visualize trees
+```
+
+
+```{r}
+tree20 <- filter_poi(tree_segs, treeID == 20)
+plot(tree20, size = 3, bg = "white")
+```
+
+
+## Extract crown metrics
+
+
+```{r}
+crowns <- crown_metrics(tree_segs, func = .stdtreemetrics, geom = "convex")
+plot(crowns["convhull_area"], main = "Crown area (convex hull)")
+```
+
+```{r}
+metrics <- crown_metrics(tree_segs, ~list(z_max = max(Z), z_mean = mean(Z))) # calculate tree metrics
+head(metrics)
+
+```
+
+
+```{r}
+plot(metrics["z_max"], pal = hcl.colors, pch = 19) # plot using z_max
+```
+
+```{r}
+custom_crown_metrics <- function(z, i) { # user-defined function
+  metrics <- list(
+     z_max = max(z),   # max height
+     z_sd = sd(z),     # vertical variability of points
+     i_mean = mean(i), # mean intensity
+     i_max  = max(i)   # max intensity
+   )
+   return(metrics) # output
+}
+
+ccm = ~custom_crown_metrics(z = Z, i = Intensity)
+```
+
+
+```{r}
+metrics <- crown_metrics(tree_segs, func = ccm, geom = "convex")
+plot(metrics["z_max"], pal = hcl.colors)
+
+```
+
+```{r}
+metrics <- crown_metrics(tree_segs, func = ccm, geom = "concave")
+plot(metrics["z_max"], pal = hcl.colors)
+```
+
