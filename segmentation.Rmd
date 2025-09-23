@@ -14,6 +14,7 @@ library(raster)
 library(terra)
 library(ggplot2)
 library(tmap)
+library(fields)
 ```
 
 ```{r}
@@ -50,20 +51,18 @@ ground_2025 <- readLAS("../data/20250613_ground.laz")
 ## Ground rasterization
 
 ```{r}
-dtm_2024 <- rasterize_terrain(ground_2024, 1, knnidw())
-dtm_2025 <- rasterize_terrain(ground_2025, 1, knnidw())
+dtm <- rasterize_terrain(ground_2024, 1, knnidw())
 ```
 
 ```{r}
-plot(dtm_2024)
-plot(dtm_2025)
+plot(dtm)
 ```
 
 ## Normalize height
 
 ```{r}
-norm_trees_2024 <- normalize_height(trees_2024, tin(), dtm = dtm_2024)
-norm_trees_2025 <- normalize_height(trees_2025, tin(), dtm = dtm_2025)
+norm_trees_2024 <- normalize_height(trees_2024, tin(), dtm = dtm)
+norm_trees_2025 <- normalize_height(trees_2025, tin(), dtm = dtm)
 ```
 
 ## Remove noise
@@ -83,26 +82,97 @@ tree_denoise_2025 <- filter_poi(noise_2025, Classification != LASNOISE)
 ```{r}
 chm_2024 <- rasterize_canopy(tree_denoise_2024, res = 0.1, algorithm = p2r(subcircle = 1), pkg = "terra")
 chm_2025 <- rasterize_canopy(tree_denoise_2025, res = 0.1, algorithm = p2r(subcircle = 1), pkg = "terra")
+```
+```{r}
+# Save CHM 2024
+writeRaster(chm_2024, filename = "chm_2024.tif", overwrite = TRUE)
+# Save CHM 2025
+writeRaster(chm_2025, filename = "chm_2025.tif", overwrite = TRUE)
+```
 
+
+```{r}
+# Color palette
 col <- height.colors(25)
-plot(chm_2024, col = col)
-plot(chm_2025, col = col)
+
+# Combined color range
+zlim <- range(values(chm_2024), values(chm_2025), na.rm = TRUE)
+
+par(mfrow = c(1, 2), mar = c(4,4,2,2))
+# Plot first raster
+image.plot(chm_2024, col = col, zlim = zlim, legend = FALSE, main = "CHM 2024")
+
+# Plot second raster
+image.plot(chm_2025, col = col, zlim = zlim, legend = FALSE, main = "CHM 2025")
+
+# Add shared colorbar on the right
+image.plot(legend.only = TRUE, zlim = zlim, col = col, legend.shrink = 0.9,
+           legend.lab = "Height (m)")
+
 ```
 
 ```{r}
 fill.na <- function(x, i=5) { if (is.na(x)[i]) { return(mean(x, na.rm = TRUE)) } else { return(x[i]) }}
 w <- matrix(1, 3, 3)
-filled <- terra::focal(chm, w, fun = fill.na)
-smoothed <- terra::focal(chm, w, fun = mean, na.rm = TRUE)
-chms <- c(chm, filled, smoothed)
+filled <- terra::focal(chm_2024, w, fun = fill.na)
+smoothed <- terra::focal(chm_2024, w, fun = mean, na.rm = TRUE)
+chms <- c(chm_2024, filled, smoothed)
 names(chms) <- c("Base", "Filled", "Smoothed")
 plot(chms, col = col)
+```
+```{r}
+smoothed_2024 <- terra::focal(chm_2024, w, fun = mean, na.rm = TRUE)
+smoothed_2025 <- terra::focal(chm_2025, w, fun = mean, na.rm = TRUE)
+
+```
+
+```{r}
+
+# Define color palette (corrected function name)
+col <- heat.colors(25)  # Fixed: height.colors -> heat.colors
+
+# Calculate shared z-limits
+zlim <- c(0, max(values(smoothed_2024), values(smoothed_2025), na.rm = TRUE))
+
+# Set up publication-quality plotting parameters
+par(mfrow = c(1, 2), 
+    mar = c(4, 4, 3, 1),     # Increased top margin for titles
+    oma = c(0, 0, 0, 4),     # Outer margin for shared legend
+    cex.main = 1.2,          # Larger title text
+    cex.lab = 1.1,           # Larger axis labels
+    cex.axis = 1.0)          # Standard axis text
+
+# Plot 2024 data
+image.plot(smoothed_2024, 
+           zlim = zlim, 
+           col = col,
+           main = "Smoothed CHM 2024",
+           xlab = "Easting (m)",
+           ylab = "Northing (m)",
+           legend = FALSE)  
+
+# Plot 2025 data
+image.plot(smoothed_2025, 
+           zlim = zlim, 
+           col = col,
+           main = "Smoothed CHM 2025", 
+           xlab = "Easting (m)",
+           ylab = "",  # Remove y-label for right plot
+           legend = FALSE)   
+```
+
+
+```{r}
+# Save CHM 2024
+writeRaster(smoothed_2024, filename = "smoothed_chm_2024.tif", overwrite = TRUE)
+# Save CHM 2025
+writeRaster(smoothed_2025, filename = "smoothed_chm_2025.tif", overwrite = TRUE)
 ```
 
 ##  Individual Tree Detection (ITD)
 
 ```{r}
-ttops <- locate_trees(tree_denoise, lmf(ws = 5))
+ttops <- locate_trees(tree_denoise, lmf(ws = 3))
 plot(chm, col = height.colors(50))
 plot(sf::st_geometry(ttops), add = TRUE, pch = 1)
 plot(smoothed, col = height.colors(50))
